@@ -5,14 +5,17 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 
-import fiona
-from fiona.crs import from_epsg
 from shapely.geometry import Polygon, mapping
 from shapely.ops import unary_union
+import fiona
+from fiona.crs import from_epsg
+
+import geopandas as gpd
 
 from config import Config as cfg
 from coordinate_translator import from_lks92_to_lat_long
 from register_layer import register_layer
+from weather import Weather
 
 
 @dataclass
@@ -25,7 +28,6 @@ class Path:
 @dataclass
 class PathsCollection:
     const_paths: list
-    nonconst_paths: list
 
    
 def count_danger(_method: str, _risk: str, _coeff: float) -> str:
@@ -40,12 +42,12 @@ def count_danger(_method: str, _risk: str, _coeff: float) -> str:
     _im = float(_dic_percentage[_risk])
     
     if _method == 'JAC':
-        if   0           < _coeff <= 0.334 * _im: return 'LOW'
+        if   -50         < _coeff <= 0.334 * _im: return 'LOW'
         elif 0.334 * _im < _coeff <= 0.431 * _im: return 'MID'
         elif 0.431 * _im < _coeff <= 1:           return 'HIGH'
 
     if _method == 'AHP':
-        if   0           < _coeff <= 3.260 * _im : return 'LOW'
+        if   -50         < _coeff <= 3.260 * _im : return 'LOW'
         elif 3.260 * _im < _coeff <= 4.772 * _im:  return 'MID'
         elif 4.772 * _im < _coeff <= 10:           return 'HIGH'
 
@@ -86,10 +88,18 @@ def count_risk_coeff(_risk: str, _model: str):
               cfg.JAC_RAISE4,
               cfg.AHP_RAISE4,
               cfg.MLC_RAISE4),
-        ],
-        # Nonconstant
-        [
-
+         Path(f'{ dataset_path }temp_risk.csv',
+              cfg.JAC_RAISE1,
+              cfg.AHP_RAISE1,
+              cfg.MLC_RAISE1),
+         Path(f'{ dataset_path }nokr_risk.csv',
+              cfg.JAC_RAISE2,
+              cfg.AHP_RAISE2,
+              cfg.MLC_RAISE2),
+         Path(f'{ dataset_path }sunny_days_risk.csv',
+              cfg.JAC_RAISE3,
+              cfg.AHP_RAISE3,
+              cfg.MLC_RAISE3),
         ])
     
     # Paths and weights for spread risk
@@ -119,17 +129,29 @@ def count_risk_coeff(_risk: str, _model: str):
               cfg.JAC_SPREAD21,
               cfg.AHP_SPREAD21,
               cfg.MLC_SPREAD21),
-        ],
-        # Nonconstant
-        [
-
+         Path(f'{ dataset_path }temp_risk.csv',
+              cfg.JAC_SPREAD10,
+              cfg.AHP_SPREAD10,
+              cfg.MLC_SPREAD10),
+         Path(f'{ dataset_path }nokr_risk.csv',
+              cfg.JAC_SPREAD11,
+              cfg.AHP_SPREAD11,
+              cfg.MLC_SPREAD11),
+         Path(f'{ dataset_path }sunny_days_risk.csv',
+              cfg.JAC_SPREAD12,
+              cfg.AHP_SPREAD12,
+              cfg.MLC_SPREAD12),
+         Path(f'{ dataset_path }veja_atr_risk.csv',
+              cfg.JAC_SPREAD13,
+              cfg.AHP_SPREAD13,
+              cfg.MLC_SPREAD13),
         ])
 
     # Paths and weights for total risk
     total_paths = PathsCollection(
-        breakout_paths.const_paths + spread_paths.const_paths,
-        breakout_paths.nonconst_paths + spread_paths.nonconst_paths
-    ) 
+        breakout_paths.const_paths + spread_paths.const_paths
+    )
+    print(total_paths)
 
     _dict_paths = {
         'breakout': breakout_paths,
@@ -139,11 +161,12 @@ def count_risk_coeff(_risk: str, _model: str):
     
     path_by_risk = _dict_paths[_risk]
     list_all_coefficients = []
-    
+
     count = 0
 
     for info in path_by_risk.const_paths:
         _path = info.path
+        print(_path)
 
         if _model == 'JAC':
             _coefficient = info.coefficient_JAC
@@ -167,9 +190,6 @@ def count_risk_coeff(_risk: str, _model: str):
                 count += 1
         except IndexError as e:
             raise IndexError(f'Error occured in file {_path} in row {row[0]}')
-    
-    for info in path_by_risk.nonconst_paths:
-        pass
 
     return [sum(i) for i in zip(*list_all_coefficients)]
 
@@ -216,7 +236,7 @@ def create_layer(_path: str, _risk: str, _method: str, _file_type: str):
                     'MID': [],
                     'HIGH': []
                 }
-            
+                 
             for square, coeff in zip(squares_shp, coefficients):
                 _id  = square['properties']['ID']
                 poly = square['geometry']['coordinates'][0]
@@ -231,7 +251,7 @@ def create_layer(_path: str, _risk: str, _method: str, _file_type: str):
                 for i, coords in enumerate(poly):
                     poly[i] = (round(coords[0], 7), round(coords[1], 7))
 
-                args = (_id, count_danger(model, coeff))
+                args = (_id, count_danger(_method, _risk, coeff))
 
                 # Filling properties with previously declared arguments
                 for _key, _arg in zip(current_properties, args):
@@ -257,30 +277,68 @@ def create_layer(_path: str, _risk: str, _method: str, _file_type: str):
                     for _poly in list_poly:
                         to_unite.append(Polygon(_poly['geometry']['coordinates'][0]))
                     union = unary_union(to_unite)
-
-                    feature_to_write = {'geometry': mapping(union),
-                                        'properties': {
-                                            'ID': str(_feature_id),
-                                            'DANGER': _danger_level
+                    
+                    _mapping = mapping(union)
+                    if _mapping["type"] == "Polygon":
+                        _mapping["type"] = "MultiPolygon"
+                        _mapping["coordinates"] = [_mapping["coordinates"]]
+                        feature_to_write = {'geometry': _mapping,
+                                            'properties': {
+                                                'ID': str(_feature_id),
+                                                'DANGER': _danger_level
+                                                }
                                             }
-                                        }
+                    elif _mapping["type"] == "MultiPolygon":
+                        feature_to_write = {'geometry': _mapping,
+                                            'properties': {
+                                                'ID': str(_feature_id),
+                                                'DANGER': _danger_level
+                                                }
+                                            }
+                    else:
+                        raise ValueError("Unsupported feature type")
+                                 
                     _feature_id += 1
                     # Writing united multipolygon
                     new_shp.write(feature_to_write)
 
 def create_shp_layers() -> None:
     """This function creates all SHP layers to `shp_path` directory"""
+
+    weather_filename = {
+        "temp": "temp_risk",
+        "nokr": "nokr_risk",
+        "veja_atr": "veja_atr_risk",
+        "sunny_days": "sunny_days_risk"
+    }
+
+    weather = Weather.get_data()
+    for key in weather.keys():
+        lst = weather[key]
+
+        with open("csv/{}.csv".format(weather_filename[key]), "w", newline='') as csv_writer:
+            file = csv.writer(csv_writer)
+            file.writerow(["ID", weather_filename[key].upper()])
+            for i, row in enumerate(lst):
+                file.writerow([i, row])
+
     
     RISKS = ['breakout', 'spread', 'total']
+    RISKS_MAPPING = {
+        "breakout": "ignition",
+        "spread": "spread",
+        "total": "total"
+    }
+
     METHOD = ['JAC', 'AHP', 'MLC']
     
     storage_path = '../storage/'
+    _date = datetime.now()
     
-    # Creating SHP file
     for _risk in RISKS:
         for _method in METHOD:
-            _date = datetime.now()
-            layer_hex  = register_layer(_risk, _method, _date)
+            # Creating SHP file
+            layer_hex  = register_layer(RISKS_MAPPING[_risk], _method, _date)
             layer_directory = f'{ storage_path }shp/{ layer_hex }'
             layer_path = f'{ layer_directory }/{ layer_hex }.shp'
             
@@ -288,21 +346,18 @@ def create_shp_layers() -> None:
             create_layer(layer_path, _risk, _method, "shp")
             
             shutil.make_archive(layer_directory, 'zip', layer_directory)
-            shutil.rmtree(layer_directory, ignore_errors=True)
-    
-    # Creating JSON file
-    for _risk in RISKS:
-        for _method in METHOD:
-            _date = datetime.now()
-            layer_hex  = register_layer(_risk, _method, _date)
-            layer_directory = f'{ storage_path }json/{ layer_hex }'
-            layer_path = f'{ layer_directory }/{ layer_hex }.geojson'
             
-            os.makedirs(layer_directory, exist_ok=True)
-            create_layer(layer_path, _risk, _method, "json")
+            # Creating JSON
+            json_layer_directory = f'{ storage_path }json'
+            json_layer_path = f'{ json_layer_directory }/{ layer_hex }.geojson'
             
-            shutil.make_archive(layer_directory, 'zip', layer_directory)
+            shp_file = gpd.read_file(layer_path)
+            shp_file.to_file(json_layer_path, driver='GeoJSON')
+
+            # Removing SHP temp directory
             shutil.rmtree(layer_directory, ignore_errors=True)
+            
+            
                            
 if __name__ == "__main__":
     create_shp_layers()
