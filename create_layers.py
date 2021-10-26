@@ -285,7 +285,7 @@ def create_shp_layers() -> None:
             layer_path = f'{ layer_directory }/{ layer_hex }.shp'
             
             os.makedirs(layer_directory, exist_ok=True)
-            create_layer(layer_path, _risk, _method)
+            create_layer(layer_path, _risk, _method, "shp")
             
             shutil.make_archive(layer_directory, 'zip', layer_directory)
             shutil.rmtree(layer_directory, ignore_errors=True)
@@ -299,7 +299,7 @@ def create_shp_layers() -> None:
             layer_path = f'{ layer_directory }/{ layer_hex }.geojson'
             
             os.makedirs(layer_directory, exist_ok=True)
-            create_layer(layer_path, _risk, _method)
+            create_layer(layer_path, _risk, _method, "json")
             
             shutil.make_archive(layer_directory, 'zip', layer_directory)
             shutil.rmtree(layer_directory, ignore_errors=True)
