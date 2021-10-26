@@ -349,7 +349,7 @@ def create_shp_layers() -> None:
             
             # Creating JSON
             json_layer_directory = f'{ storage_path }json'
-            json_layer_path = f'{ json_layer_directory }/{ layer_hex }.geojson'
+            json_layer_path = f'{ json_layer_directory }/{ layer_hex }.json'
             
             shp_file = gpd.read_file(layer_path)
             shp_file.to_file(json_layer_path, driver='GeoJSON')
