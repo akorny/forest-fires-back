@@ -274,7 +274,7 @@ def create_shp_layers() -> None:
     RISKS = ['breakout', 'spread', 'total']
     METHOD = ['JAC', 'AHP', 'MLC']
     
-    storage_path = '/api/storage/'
+    storage_path = '../storage/'
     
     # Creating SHP file
     for _risk in RISKS:
