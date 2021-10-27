@@ -34,8 +34,8 @@ def count_danger(_method: str, _risk: str, _coeff: float) -> str:
     """This function counts danger level using previously declared interval"""
 
     _dic_percentage = {
-        'breakout': 0.444,
-        'spread': 0.556,
+        'breakout': 0.528,
+        'spread': 0.472,
         'total': 1
     }
     
@@ -141,17 +141,16 @@ def count_risk_coeff(_risk: str, _model: str):
               cfg.JAC_SPREAD12,
               cfg.AHP_SPREAD12,
               cfg.MLC_SPREAD12),
-         Path(f'{ dataset_path }veja_atr_risk.csv',
-              cfg.JAC_SPREAD13,
-              cfg.AHP_SPREAD13,
-              cfg.MLC_SPREAD13),
+         Path(f'{ dataset_path }stigas_risk.csv',
+              cfg.JAC_SPREAD20,
+              cfg.AHP_SPREAD20,
+              cfg.MLC_SPREAD20),
         ])
 
     # Paths and weights for total risk
     total_paths = PathsCollection(
         breakout_paths.const_paths + spread_paths.const_paths
     )
-    print(total_paths)
 
     _dict_paths = {
         'breakout': breakout_paths,
@@ -166,7 +165,6 @@ def count_risk_coeff(_risk: str, _model: str):
 
     for info in path_by_risk.const_paths:
         _path = info.path
-        print(_path)
 
         if _model == 'JAC':
             _coefficient = info.coefficient_JAC
@@ -337,6 +335,7 @@ def create_shp_layers() -> None:
     
     for _risk in RISKS:
         for _method in METHOD:
+            print("Creating layer. Method -> {}; Risk -> {}".format(_method, _risk))
             # Creating SHP file
             layer_hex  = register_layer(RISKS_MAPPING[_risk], _method, _date)
             layer_directory = f'{ storage_path }shp/{ layer_hex }'
