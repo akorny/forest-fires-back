@@ -4,6 +4,7 @@ import math
 import csv
 from copy import deepcopy
 from coordinate_translator import from_lat_long_to_lks92
+import datetime
 
 class NoDataException(Exception):
     def __init__(self, *args: object) -> None:
@@ -14,7 +15,9 @@ class Weather:
     damaged_data_output= 999
     weather_url = "https://gispub.lvceli.lv/gispub/rest/services/GISPUB/SIC_CMSPoint/MapServer/1/query?where=&text=LV&objectIds=&time=&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&relationParam=&outFields=*&returnGeometry=true&returnTrueCurves=false&maxAllowableOffset=&geometryPrecision=&outSR=&returnIdsOnly=false&returnCountOnly=false&orderByFields=&groupByFieldsForStatistics=&outStatistics=&returnZ=false&returnM=false&gdbVersion=&returnDistinctValues=false&resultOffset=&resultRecordCount=&queryByDistance=&returnExtentsOnly=false&datumTransformation=&parameterValues=&rangeValues=&f=pjson"
     forest_points_path = "csv/forest_points.csv"
-    sunny_days_path = "csv/sunny_days.csv"
+    hot_days_path = "csv/hot_days_stations_.csv"
+    nokr_path = "csv/nokr_sum.csv"
+    town_coords_path = "csv/town_coords.csv"
     points = [
         {'id': 'LV01', 'y': '57.19453487', 'x': '24.36230328'},
         {'id': 'LV02', 'y': '57.16828851', 'x': '24.96569038'},
@@ -110,56 +113,100 @@ class Weather:
         weather = {}
         result_weather = []
         for attr in data["features"]:
-            weather[attr["attributes"]["id"]] = {"id": attr["attributes"]["id"], "temp": attr["attributes"]["at"],
-                                    "nokr": attr["attributes"]["rs"],
+            weather[attr["attributes"]["id"]] = {"id": attr["attributes"]["id"], 
+                                    "temp": attr["attributes"]["at"],
+                                    "is_raining": attr["attributes"]["rs"],
                                     "veja_atr": attr["attributes"]["ws"]
                                     }
 
-        forest_points = []
 
+        forest_points = []
         with open(Weather.forest_points_path, 'r') as file:
-                csvreader = csv.reader(file)
-                next(csvreader)
-                for row in csvreader:
-                    forest_points.append([row[1], row[2]])
-    
-        days_points = []
-        sunny_days_for_ponts = {}
-        with open(Weather.sunny_days_path, 'r') as file:
             csvreader = csv.reader(file)
             next(csvreader)
             for row in csvreader:
-                for i in range(len(Weather.points)):
-                    if row[0] == Weather.points[i]["id"]:
-                        days_points.append(Weather.points[i])
-                        sunny_days_for_ponts[row[0]] = row[1]
-        
+                forest_points.append([row[1], row[2]])
+
+
+        nokr = {}
+        with open(Weather.nokr_path, "r", encoding="utf-8") as file:
+            reader = csv.reader(file)
+            next(reader)
+            for item in reader:
+                if item[0] in nokr.keys():
+                    nokr[item[0]].append([item[1], item[2]])
+                else:
+                    nokr[item[0]] = [[item[1], item[2]]]
+
+
+        hot_days = {}
+        with open(Weather.hot_days_path, "r", encoding="utf-8") as file:
+            reader = csv.reader(file)
+            next(reader)
+            for item in reader:
+                if item[1] in hot_days.keys():
+                    hot_days[item[1]].append([item[2], item[3]])
+                else:
+                    hot_days[item[1]] = [[item[2], item[3]]]
+
+
+        town_coords = {}
+        with open(Weather.town_coords_path, "r", encoding="utf-8") as file:
+            reader = csv.reader(file)
+            next(reader)
+            for item in reader:
+                town_coords[item[0]] = [float(item[1]), float(item[2])]
+
 
         for point in forest_points:
             points = deepcopy(Weather.points)
             x, y = point[0], point[1]
             result_weather.append({"id": None, 
                                     "temp": None,
-                                    "nokr": None,
-                                    "veja_atr": None})
+                                    "veja_atr": None,
+                                    "nokr": 0,
+                                    "hot_days": 0,
+                                    "is_raining": None
+                                    })
             while True:
                 if len(points) == 0:
                     raise NoDataException("No data was found")
                 nearest_id, index = Weather.get_nearest(x, y, points)
                 
                 
-                if None in [result_weather[len(result_weather) - 1][a] for a in ("temp", "nokr", "veja_atr")]:
+                if None in [result_weather[len(result_weather) - 1][a] for a in ("temp", "veja_atr", "is_raining")]:
                     for i in weather[nearest_id].keys():
                         if result_weather[len(result_weather) - 1][i] == None:
                             result_weather[len(result_weather) - 1][i] = weather[nearest_id][i] if weather[nearest_id][i] not in (Weather.damaged_data_output, "none") else None
-                nearest_id, index_new = Weather.get_nearest(x, y, days_points)
-                result_weather[len(result_weather) - 1]["sunny_days"] = int(sunny_days_for_ponts[nearest_id])
                 
-                if None in [result_weather[len(result_weather) - 1][a] for a in ("temp", "nokr", "veja_atr")]:
+                if None in [result_weather[len(result_weather) - 1][a] for a in ("temp", "veja_atr", "is_raining")]:
                     del points[index]
                     continue
 
                 break
+
+            month = datetime.datetime.today().month
+
+            for i in hot_days[nearest_id]:
+                if int(i[0]) in [month, month - 1, month - 2]:
+                    result_weather[len(result_weather) - 1]["hot_days"] += int(i[1])
+        
+            nearest = None
+            nearest_distance = None
+            for town in town_coords.keys():
+                distance = math.sqrt(abs(float(point[0]) - town_coords[town][0])**2 + abs(float(point[1]) - town_coords[town][1])**2)
+                if not nearest:
+                    nearest, nearest_distance = town, distance
+
+                elif distance < nearest_distance:
+                    nearest, nearest_distance = town, distance
+
+
+            
+            for i in nokr[nearest]:
+                if int(i[0]) in [month, month - 1, month - 2]:
+                    result_weather[len(result_weather) - 1]["nokr"] += int(i[1])
+
                 
         for i in result_weather:
             if i["temp"] < 18.2:
@@ -173,18 +220,6 @@ class Weather:
             else:
                 i["temp"] = 5
 
-        
-            if i["nokr"] in [4, 5, 6]:
-                i["nokr"] = 1
-            elif i["nokr"] == 3:
-                i["nokr"] = 2
-            elif i["nokr"] == 2:
-                i["nokr"] = 3
-            elif i["nokr"] == 1:
-                i["nokr"] = 4
-            else:
-                i["nokr"] = 5
-
 
             if i["veja_atr"] < 3:
                 i["veja_atr"] = 1
@@ -197,22 +232,37 @@ class Weather:
             else:
                 i["veja_atr"] = 5
 
-            
-            if i["sunny_days"] < 34:
-                i["sunny_days"] = 1
-            elif i["sunny_days"] in range(34, 41):
-                i["sunny_days"] = 2
-            elif i["sunny_days"] in range(41, 48):
-                i["sunny_days"] = 3
-            elif i["sunny_days"] in range(48, 55):
-                i["sunny_days"] = 4
+            if i["nokr"] > 205:
+                i["nokr"] = 1
+            elif i["nokr"] > 195:
+                i["nokr"] = 2
+            elif i["nokr"] > 185:
+                i["nokr"] = 3
+            elif i["nokr"] > 175:
+                i["nokr"] = 4
             else:
-                i["sunny_days"] = 5
+                i["nokr"] = 5
 
-        result_weather_dict = {"temp": [result_weather[i]["temp"] for i in range(len(result_weather))], 
-        "nokr": [result_weather[i]["nokr"] for i in range(len(result_weather))],
-        "veja_atr": [result_weather[i]["veja_atr"] for i in range(len(result_weather))],
-        "sunny_days": [result_weather[i]["sunny_days"] for i in range(len(result_weather))]
-        }
+            if i["hot_days"] < 34:
+                i["hot_days"] = 1
+            elif i["hot_days"] < 41:
+                i["hot_days"] = 2
+            elif i["hot_days"] < 48:
+                i["hot_days"] = 3
+            elif i["hot_days"] < 55:
+                i["hot_days"] = 4
+            else:
+                i["hot_days"] = 5
+            
+            i["is_raining"] = True if i["is_raining"] > 0 else False
+
+
+
+        result_weather_dict = {"temp": [result_weather[i]["temp"] for i in range(len(result_weather))],
+                                "veja_atr": [result_weather[i]["veja_atr"] for i in range(len(result_weather))],
+                                "hot_days": [result_weather[i]["hot_days"] for i in range(len(result_weather))],
+                                "is_raining": [result_weather[i]["is_raining"] for i in range(len(result_weather))],
+                                "nokr": [result_weather[i]["nokr"] for i in range(len(result_weather))]
+                                }
 
         return result_weather_dict

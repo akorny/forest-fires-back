@@ -45,16 +45,22 @@ def count_danger(_method: str, _risk: str, _coeff: float) -> str:
         if   -50         < _coeff <= 0.334 * _im: return 'LOW'
         elif 0.334 * _im < _coeff <= 0.431 * _im: return 'MID'
         elif 0.431 * _im < _coeff <= 1:           return 'HIGH'
+        else:
+            raise ValueError("Coefficient {} is not in range".format(_coeff))
 
     if _method == 'AHP':
         if   -50         < _coeff <= 3.260 * _im : return 'LOW'
         elif 3.260 * _im < _coeff <= 4.772 * _im:  return 'MID'
         elif 4.772 * _im < _coeff <= 10:           return 'HIGH'
+        else:
+            raise ValueError("Coefficient {} is not in range".format(_coeff))
 
     if _method == 'MLC':
-        if   0             < _coeff <= 93.592 * _im:  return 'LOW'
+        if   -50           < _coeff <= 93.592 * _im:  return 'LOW'
         elif 93.592 * _im  < _coeff <= 149.916 * _im: return 'MID'
         elif 149.916 * _im < _coeff <= 300:           return 'HIGH'
+        else:
+            raise ValueError("Coefficient {} is not in range".format(_coeff))
 
 def count_risk_coeff(_risk: str, _model: str):
     """
@@ -96,7 +102,7 @@ def count_risk_coeff(_risk: str, _model: str):
               cfg.JAC_RAISE2,
               cfg.AHP_RAISE2,
               cfg.MLC_RAISE2),
-         Path(f'{ dataset_path }sunny_days_risk.csv',
+         Path(f'{ dataset_path }hot_days_risk.csv',
               cfg.JAC_RAISE3,
               cfg.AHP_RAISE3,
               cfg.MLC_RAISE3),
@@ -137,7 +143,7 @@ def count_risk_coeff(_risk: str, _model: str):
               cfg.JAC_SPREAD11,
               cfg.AHP_SPREAD11,
               cfg.MLC_SPREAD11),
-         Path(f'{ dataset_path }sunny_days_risk.csv',
+         Path(f'{ dataset_path }hot_days_risk.csv',
               cfg.JAC_SPREAD12,
               cfg.AHP_SPREAD12,
               cfg.MLC_SPREAD12),
@@ -307,7 +313,8 @@ def create_shp_layers() -> None:
         "temp": "temp_risk",
         "nokr": "nokr_risk",
         "veja_atr": "veja_atr_risk",
-        "sunny_days": "sunny_days_risk"
+        "hot_days": "hot_days_risk",
+        "is_raining": "is_raining_risk"
     }
 
     weather = Weather.get_data()
